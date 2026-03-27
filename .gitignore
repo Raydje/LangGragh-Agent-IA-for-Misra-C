@@ -1,8 +1,69 @@
+# Environment variables
 .env
-__pycache__/
-*.pyc
+.env.*
+!.env.example
+
+# Python virtual environments
 .venv/
-*.egg-info/
+venv/
+env/
+ENV/
+.python-version
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Distribution / packaging
 dist/
 build/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Type checking
 .mypy_cache/
+.dmypy.json
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Pinecone / vector store local files
+*.pkl
+*.faiss
+
+# Misc
+*.tmp
+*.bak
