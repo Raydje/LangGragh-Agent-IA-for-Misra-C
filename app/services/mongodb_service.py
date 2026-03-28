@@ -37,10 +37,9 @@ async def insert_rules(rules: list[dict]) -> None:
         await coll.insert_many(rules)
 
 
-async def create_indexes() -> None:
+async def create_indexes(section: str, rule_number: str) -> None:
     coll = await get_rules_collection()
-    await coll.create_index("rule_id", unique=True)
-    await coll.create_index("standard")
-    await coll.create_index("dal_level")
-    await coll.create_index("section")
-    await coll.create_index([("standard", 1), ("dal_level", 1)])
+    await coll.create_index(
+        [(section, 1), (rule_number, 1)], 
+        unique=True
+    )
