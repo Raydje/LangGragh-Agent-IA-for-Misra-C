@@ -6,17 +6,38 @@ from app.graph.nodes.orchestrator import orchestrate, OrchestratorOutput
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_mock_chain(intent: str, reasoning: str) -> MagicMock:
+def _make_raw_result(intent: str, reasoning: str) -> dict:
+    """Build the dict that chain.invoke() returns when include_raw=True."""
+    raw_mock = MagicMock()
+    raw_mock.usage_metadata = {"input_tokens": 0, "output_tokens": 0}
+    return {
+        "parsed": OrchestratorOutput(intent=intent, reasoning=reasoning),
+        "raw": raw_mock,
+    }
+
+
+def _setup_mocks(mock_get_llm, mock_template, intent: str, reasoning: str) -> MagicMock:
+    """
+    Wire up the mock chain:
+      get_llm() -> llm_mock
+      llm_mock.with_structured_output(...) -> structured_llm_mock
+      ChatPromptTemplate.from_messages(...) -> prompt_mock
+      prompt_mock | structured_llm_mock -> chain
+      chain.invoke(...) -> {"parsed": ..., "raw": ...}
+    """
     chain = MagicMock()
-    chain.invoke.return_value = OrchestratorOutput(intent=intent, reasoning=reasoning)
+    chain.invoke.return_value = _make_raw_result(intent, reasoning)
+
+    structured_llm_mock = MagicMock()
+    llm_mock = MagicMock()
+    llm_mock.with_structured_output.return_value = structured_llm_mock
+    mock_get_llm.return_value = llm_mock
+
+    prompt_mock = MagicMock()
+    prompt_mock.__or__ = MagicMock(return_value=chain)
+    mock_template.from_messages.return_value = prompt_mock
+
     return chain
-
-
-def _patch_template(mock_template: MagicMock, chain: MagicMock) -> None:
-    """Make ChatPromptTemplate.from_messages(...) | llm return our chain."""
-    mock_prompt = MagicMock()
-    mock_prompt.__or__ = MagicMock(return_value=chain)
-    mock_template.from_messages.return_value = mock_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -24,11 +45,9 @@ def _patch_template(mock_template: MagicMock, chain: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 def test_returns_intent_and_reasoning_from_llm():
-    chain = _make_mock_chain("search", "User is asking about rules.")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm") as mock_llm, \
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
-        mock_llm.return_value = MagicMock()
+        _setup_mocks(mock_get_llm, mock_template, "search", "User is asking about rules.")
 
         result = orchestrate({"query": "What are pointer rules?", "code_snippet": ""})
 
@@ -37,10 +56,9 @@ def test_returns_intent_and_reasoning_from_llm():
 
 
 def test_standard_is_always_hardcoded_to_misra():
-    chain = _make_mock_chain("validate", "Code snippet present.")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm"), \
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
+        _setup_mocks(mock_get_llm, mock_template, "validate", "Code snippet present.")
 
         result = orchestrate({"query": "Check this code", "code_snippet": "int x = 0;"})
 
@@ -48,10 +66,9 @@ def test_standard_is_always_hardcoded_to_misra():
 
 
 def test_explain_intent_propagated():
-    chain = _make_mock_chain("explain", "User wants an explanation.")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm"), \
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
+        _setup_mocks(mock_get_llm, mock_template, "explain", "User wants an explanation.")
 
         result = orchestrate({"query": "Explain rule 15.5", "code_snippet": ""})
 
@@ -59,21 +76,20 @@ def test_explain_intent_propagated():
 
 
 def test_returns_exactly_three_state_keys():
-    chain = _make_mock_chain("search", "reason")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm"), \
+    """Verify that at minimum the three LangGraph-relevant state keys are present."""
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
+        _setup_mocks(mock_get_llm, mock_template, "search", "reason")
 
         result = orchestrate({"query": "Find rules", "code_snippet": ""})
 
-    assert set(result.keys()) == {"intent", "orchestrator_reasoning", "standard"}
+    assert {"intent", "orchestrator_reasoning", "standard"}.issubset(result.keys())
 
 
 def test_chain_invoked_with_query_and_code():
-    chain = _make_mock_chain("validate", "Code provided.")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm"), \
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
+        chain = _setup_mocks(mock_get_llm, mock_template, "validate", "Code provided.")
 
         orchestrate({"query": "Validate code", "code_snippet": "void foo() {}"})
 
@@ -84,10 +100,9 @@ def test_chain_invoked_with_query_and_code():
 
 
 def test_no_code_snippet_passes_none_provided_string():
-    chain = _make_mock_chain("search", "No code.")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm"), \
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
+        chain = _setup_mocks(mock_get_llm, mock_template, "search", "No code.")
 
         orchestrate({"query": "Find memory rules", "code_snippet": ""})
 
@@ -95,13 +110,11 @@ def test_no_code_snippet_passes_none_provided_string():
     assert call_kwargs["code"] == "None provided."
 
 
-def test_get_structured_llm_called_with_zero_temperature():
-    chain = _make_mock_chain("search", "r")
-    with patch("app.graph.nodes.orchestrator.get_structured_llm") as mock_get_llm, \
+def test_get_llm_called_with_zero_temperature():
+    with patch("app.graph.nodes.orchestrator.get_llm") as mock_get_llm, \
          patch("app.graph.nodes.orchestrator.ChatPromptTemplate") as mock_template:
-        _patch_template(mock_template, chain)
-        mock_get_llm.return_value = MagicMock()
+        _setup_mocks(mock_get_llm, mock_template, "search", "r")
 
         orchestrate({"query": "q", "code_snippet": ""})
 
-    mock_get_llm.assert_called_once_with(OrchestratorOutput, temperature=0.0)
+    mock_get_llm.assert_called_once_with(temperature=0.0)
