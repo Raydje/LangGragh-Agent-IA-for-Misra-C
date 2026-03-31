@@ -1,9 +1,23 @@
-import json
+from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.state import ComplianceState
 from app.services.llm_service import get_llm
 from app.config import get_settings
-from app.utils import calculate_gemini_cost, parse_json_response, logger
+from app.utils import calculate_gemini_cost, logger
+
+
+# Structured output schema — guarantees valid typed output from the LLM
+class RemediationOutput(BaseModel):
+    fixed_code_snippet: str = Field(
+        description="The complete corrected C code, ready to compile."
+    )
+    remediation_explanation: str = Field(
+        description=(
+            "A per-rule breakdown. For each violation addressed, use the format: "
+            "'Rule ID (Category): what was wrong on which line → what was changed and why.' "
+            "If an Advisory rule was intentionally left unfixed, state the reason explicitly."
+        )
+    )
 
 
 async def remediate_code(state: ComplianceState) -> dict:
@@ -47,19 +61,11 @@ CONSTRAINTS — follow all of them without exception:
    - Required: MUST be fixed unless a formal deviation has been documented (assume none here).
    - Advisory: SHOULD be fixed. If fixing it would break functionality or introduce a Required/Mandatory violation, note it but leave it unfixed.
 
-You MUST respond with a valid JSON object matching this schema exactly:
-{
-  "fixed_code_snippet": "/* The corrected C code */",
-  "remediation_explanation": "string"
-}
-
 Field details:
 - "fixed_code_snippet": the complete corrected C code, ready to compile.
 - "remediation_explanation": a per-rule breakdown. For each violation addressed, use the format:
   "Rule ID (Category): what was wrong on which line → what was changed and why."
-  If an Advisory rule was intentionally left unfixed, state the reason explicitly.
-
-Do not include any text outside the JSON block."""
+  If an Advisory rule was intentionally left unfixed, state the reason explicitly."""
 
     human_content = f"""### Original Non-Compliant Code:
 ```c
@@ -74,20 +80,25 @@ Do not include any text outside the JSON block."""
 
 ### Instructions:
 Fix the code strictly according to the CONSTRAINTS in the system prompt.
-Respond with the JSON object only."""
+Provide your structured remediation output."""
 
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=human_content),
     ]
 
-    response = await llm.ainvoke(messages)
+    # Use with_structured_output for guaranteed Pydantic-validated output
+    structured_llm = llm.with_structured_output(RemediationOutput, include_raw=True)
+    raw_result = await structured_llm.ainvoke(messages)
+
     try:
-        result = parse_json_response(response.content)
-        fixed_code = result.get("fixed_code_snippet", "")
-        explanation = result.get("remediation_explanation", "")
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        logger.error("Remediation node failed to parse JSON.", error=str(e))
+        result: RemediationOutput = raw_result["parsed"]
+        if result is None:
+            raise ValueError("Structured output parsing returned None")
+        fixed_code = result.fixed_code_snippet
+        explanation = result.remediation_explanation
+    except (KeyError, ValueError, AttributeError) as e:
+        logger.error("Remediation failed to parse structured output.", error=str(e))
         return {
             "fixed_code_snippet": code_snippet,
             "remediation_explanation": f"System failed to generate a fix automatically. Error: {str(e)}",
@@ -98,9 +109,9 @@ Respond with the JSON object only."""
             "estimated_cost": 0.0,
         }
 
-    remediation_usage = getattr(response, "usage_metadata", None) or {}
-    _input_tokens = remediation_usage.get("input_tokens", 0)
-    _output_tokens = remediation_usage.get("output_tokens", 0)
+    usage = getattr(raw_result.get("raw"), "usage_metadata", None) or {}
+    _input_tokens = usage.get("input_tokens", 0)
+    _output_tokens = usage.get("output_tokens", 0)
     logger.info("Remediation_node_result", fixed_code_snippet=fixed_code, input_tokens=_input_tokens, output_tokens=_output_tokens)
     logger.info("Remediation_node_cost", estimated_cost=calculate_gemini_cost(_input_tokens, _output_tokens))
 
