@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, HTTPException, Depends
 from app.models.requests import ComplianceQueryRequest
 from app.models.responses import (
@@ -61,8 +62,9 @@ async def query_compliance(
     }
 
     try:
-        # Run the graph asynchronously
-        result = await graph.ainvoke(initial_state)
+        # Run the graph asynchronously with a unique thread ID for tracking
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        result = await graph.ainvoke(initial_state, config=config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

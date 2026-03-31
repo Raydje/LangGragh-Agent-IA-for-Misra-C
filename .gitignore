@@ -51,6 +51,8 @@ htmlcov/
 *.log
 logs/
 temps.json
+checkpoints.sqlite
+read_sqlite.py
 
 # IDEs
 .vscode/
@@ -58,6 +60,7 @@ temps.json
 *.swp
 *.swo
 *~
+CLAUDE.md
 
 # OS
 .DS_Store

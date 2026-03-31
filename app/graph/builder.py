@@ -8,6 +8,8 @@ from app.graph.nodes.rag import rag_node
 from app.graph.nodes.validation import validation_node
 from app.graph.nodes.critique import critique_node
 from app.graph.nodes.remedier import remediate_code
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import aiosqlite
 
 # Import your routing edges
 from app.graph.edges import route_after_rag, should_loop_or_finish
@@ -64,7 +66,7 @@ def assemble_node(state: ComplianceState) -> dict:
     return {"final_response": final_answer}
 
 
-def build_graph() -> CompiledStateGraph:
+async def build_graph(conn: aiosqlite.Connection) -> CompiledStateGraph:
     """
     Compiles the LangGraph state machine.
     """
@@ -113,6 +115,9 @@ def build_graph() -> CompiledStateGraph:
 
     # 7. End the graph
     workflow.add_edge("assemble", END)
+    
+    # 8. Initialize the async SQLite saver with the injected connection
+    memory = AsyncSqliteSaver(conn)
 
-    # 8. Compile!
-    return workflow.compile()
+    # 9. Compile!
+    return workflow.compile(checkpointer=memory)

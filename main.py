@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from app.api.routes import router
 from app.config import get_settings
 from app.utils import logger
+from app.graph.builder import build_graph
+import aiosqlite
 
 
 @asynccontextmanager
@@ -15,7 +17,10 @@ async def lifespan(app: FastAPI):
     logger.info(f"[Startup] Gemini model: {settings.gemini_model}")
     logger.info(f"[Startup] MongoDB: {settings.mongodb_uri}/{settings.mongodb_database}")
     logger.info(f"[Startup] Pinecone index: {settings.pinecone_index_name}")
+    conn = await aiosqlite.connect("checkpoints.sqlite")
+    app.state.graph = await build_graph(conn)
     yield
+    await conn.close()
 
 
 # Initialize FastAPI app with metadata for Swagger UI
