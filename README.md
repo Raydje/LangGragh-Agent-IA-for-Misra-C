@@ -1,15 +1,17 @@
 # MISRA C:2023 Compliance Validator
 
-A production-quality **multi-agent system** that parses MISRA C:2023 technical standards, validates C code against them, and proposes remediated fixes. Built as a GitHub portfolio project demonstrating LLM orchestration, RAG pipelines, agentic critique loops, automated code remediation, and **async-first architecture with persistent state checkpointing**.
+A production-quality **multi-agent system** that parses MISRA C:2023 technical standards, validates C code against them, and proposes remediated fixes. Built as a GitHub portfolio project demonstrating LLM orchestration, RAG pipelines, agentic critique loops, automated code remediation, **Mixture of Experts (MoE) routing**, and **async-first architecture with persistent state checkpointing**.
 
 ---
 
 ## Highlights
 
 - **Fully asynchronous** end-to-end: every graph node, service call, and route handler is `async`. Even the synchronous Pinecone SDK is wrapped with `asyncio.to_thread()` to never block the event loop.
-- **SQLite checkpoint memory** via LangGraph's `AsyncSqliteSaver` + `aiosqlite` — every node execution is durably persisted, enabling session resumption and time-travel replay.
+- **Mixture of Experts (MoE) routing** — the Orchestrator acts as a gating network, dynamically dispatching each request to the appropriate specialist agent (RAG, Validator, Critique, Remedier) based on classified intent, mirroring MoE architectures where only the relevant experts are activated per input.
+- **MongoDB checkpoint memory** — every node execution is durably persisted to MongoDB Atlas via LangGraph's `AsyncMongoDBSaver`, enabling session resumption, time-travel replay, and horizontal scaling without a local SQLite file.
 - **Granular Session Resumption** — clients can pass a `thread_id` to continue a previous session, or omit it to start fresh. Every response returns the `thread_id` for future reference.
 - **"Time Travel" debugging** via the `/replay` endpoint — fork and re-execute from any checkpoint in a session's history, essential for verifying complex MISRA C compliance logic where multiple agents (Orchestrator, RAG, Validator, Critique) interact across iterations.
+- **Per-request cost estimation** — every LLM-calling node tracks `prompt_tokens` and `completion_tokens` using LangGraph's `Annotated[int, operator.add]` state reducers, automatically accumulating totals across all agents. Each response includes an `estimated_cost` (USD) computed from a built-in pricing table covering 30+ Gemini models (`app/models_pricing.py`), giving full cost visibility without any external billing API.
 
 ---
 
@@ -22,7 +24,7 @@ A production-quality **multi-agent system** that parses MISRA C:2023 technical s
 | Embeddings | `gemini-embedding-001` (768 dims) |
 | Vector DB | Pinecone (free tier, serverless, cosine) |
 | Document DB | MongoDB Atlas M0 (free) via Motor (async) |
-| Checkpoint DB | SQLite via `aiosqlite` + `AsyncSqliteSaver` |
+| Checkpoint DB | MongoDB Atlas M0 via `AsyncMongoDBSaver` (Motor async) |
 | Agent framework | LangGraph + LangChain Core |
 | Config | Pydantic Settings + `python-dotenv` |
 | Logging | `structlog` (structured, console renderer) |
@@ -63,7 +65,7 @@ flowchart TD
     end
 
     subgraph Persistence["Checkpoint Layer"]
-        sqlite[("SQLite\nAsyncSqliteSaver\ncheckpoints.sqlite")]
+        mongocp[("MongoDB Atlas\nAsyncMongoDBSaver\ncheckpoints collection")]
     end
 
     subgraph Services["External Services"]
@@ -103,7 +105,7 @@ flowchart TD
     critique <-->|"temp=0.0"| gemini
     remedier <-->|"temp=0.2"| gemini
 
-    LangGraph -.->|"every node checkpointed"| sqlite
+    LangGraph -.->|"every node checkpointed"| mongocp
 
     assemble --> Response
 
@@ -121,10 +123,9 @@ flowchart TD
 
 ```
 MyProjectCv/
-├── main.py                              # FastAPI app factory + lifespan (SQLite checkpoint)
+├── main.py                              # FastAPI app factory + lifespan (MongoDB checkpoint)
 ├── requirements.txt
 ├── pytest.ini
-├── checkpoints.sqlite                   # Runtime-generated checkpoint DB (gitignored)
 │
 ├── app/
 │   ├── config.py                        # Pydantic Settings (lru_cache), CORS origins
@@ -137,7 +138,7 @@ MyProjectCv/
 │   │   └── responses.py                 # ComplianceQueryResponse, ThreadHistory*, MetadataUsage
 │   │
 │   ├── graph/
-│   │   ├── builder.py                   # build_graph() with AsyncSqliteSaver + assemble_node
+│   │   ├── builder.py                   # build_graph() with AsyncMongoDBSaver + assemble_node
 │   │   ├── edges.py                     # route_after_rag, should_loop_or_finish
 │   │   └── nodes/
 │   │       ├── orchestrator.py          # Intent classifier (async, structured output)
@@ -250,15 +251,16 @@ When no `code_snippet` is provided, the orchestrator classifies the intent as `s
 
 ---
 
-## SQLite Checkpoint Memory
+## MongoDB Checkpoint Memory
 
-Every node execution in the LangGraph pipeline is automatically persisted to a local `checkpoints.sqlite` database via LangGraph's `AsyncSqliteSaver`. This provides:
+Every node execution in the LangGraph pipeline is automatically persisted to MongoDB Atlas via LangGraph's `AsyncMongoDBSaver`. This provides:
 
 - **Durable state** — the full `ComplianceState` (query, retrieved rules, validation results, critique feedback, token counts) is saved after each node completes.
 - **Session continuity** — clients resume conversations by re-using a `thread_id`. The graph picks up exactly where it left off.
 - **Crash recovery** — if the server restarts mid-pipeline, the checkpoint allows resumption from the last completed node rather than re-running from scratch.
+- **Horizontal scaling** — unlike a local SQLite file, MongoDB Atlas is accessible from multiple server instances, enabling stateless, scalable deployments.
 
-The SQLite connection is managed via FastAPI's `lifespan` context manager in `main.py`: opened on startup, passed into `build_graph()`, and closed cleanly on shutdown.
+The MongoDB connection is managed via FastAPI's `lifespan` context manager in `main.py`: opened on startup, passed into `build_graph()`, and closed cleanly on shutdown.
 
 ---
 
@@ -314,8 +316,8 @@ The entire pipeline is asynchronous:
 | MongoDB service | `motor.AsyncIOMotorClient` (native async) |
 | Pinecone service | Sync SDK wrapped in `asyncio.to_thread()` |
 | Embedding service | `aembed_query()` / `aembed_documents()` |
-| SQLite checkpoint | `aiosqlite` + `AsyncSqliteSaver` |
-| Assemble node | Synchronous (pure string formatting, no I/O) |
+| MongoDB checkpoint | `AsyncMongoDBSaver` via Motor (native async) |
+| Assemble node | `async def`, pure string formatting (no I/O, no `await`) |
 
 ---
 
@@ -395,7 +397,7 @@ Reviews the validation output against 5 hallucination criteria. Returns `critiqu
 Triggered only when `critique_approved=True` and `is_compliant=False`. Takes the original non-compliant code, the cited rules (with full rule text), and the validation report, then generates a minimally-modified compliant version. Respects MISRA rule categories (Mandatory / Required / Advisory) and outputs both `fixed_code_snippet` and a per-rule `remediation_explanation`.
 
 ### Assemble Node
-Formats `final_response` based on the resolved intent. Defined inline in `graph/builder.py`.
+Formats `final_response` based on the resolved intent. Defined as `async def assemble_node` inline in `graph/builder.py`.
 
 ---
 
