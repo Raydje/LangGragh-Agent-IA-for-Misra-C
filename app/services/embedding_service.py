@@ -1,7 +1,7 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.config import get_settings
-from app.services.pinecone_service import upsert_vectors
+from app.services.pinecone_service import get_pinecone_service
 from app.utils import logger
 
 _service_instance = None
@@ -60,6 +60,6 @@ class EmbeddingService:
             })
 
         logger.info("Delegating upload to pinecone_service...")
-        upserted = await upsert_vectors(vectors)
+        upserted = await get_pinecone_service().upsert_vectors(vectors)
         logger.info(f"✅ Successfully passed {len(vectors)} embeddings to Pinecone!")
         return upserted

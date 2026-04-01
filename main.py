@@ -6,21 +6,33 @@ from app.api.routes import router
 from app.config import get_settings
 from app.utils import logger
 from app.graph.builder import build_graph
+from app.services.mongodb_service import get_mongodb_service
+from app.services.pinecone_service import get_pinecone_service
 import aiosqlite
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Logs configuration on startup to ensure environment variables are loaded."""
+    """Initialise all services and the LangGraph agent on startup; tear down on shutdown."""
     settings = get_settings()
-    logger.info(f"[Startup] Loaded config for standard: MISRA C:2023")
+    logger.info("[Startup] Loaded config for standard: MISRA C:2023")
     logger.info(f"[Startup] Gemini model: {settings.gemini_model}")
     logger.info(f"[Startup] MongoDB: ********/{settings.mongodb_database}")
     logger.info(f"[Startup] Pinecone index: {settings.pinecone_index_name}")
+
+    # Eager init: creates module-level singletons now, not on first request.
+    # app.state holds the same reference — used by route dependencies.
+    app.state.mongodb = get_mongodb_service()
+    app.state.pinecone = get_pinecone_service()
+
     conn = await aiosqlite.connect("checkpoints.sqlite")
     app.state.graph = await build_graph(conn)
+
     yield
-    await conn.close()
+
+    # --- Shutdown ---
+    conn.close()
+    app.state.mongodb.close()
 
 
 # Initialize FastAPI app with metadata for Swagger UI

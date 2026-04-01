@@ -3,8 +3,8 @@
 from typing import Any
 from app.models.state import ComplianceState, RetrievedRule
 from app.services.embedding_service import get_embedding
-from app.services.pinecone_service import query_pinecone
-from app.services.mongodb_service import get_misra_rules_by_pinecone_ids
+from app.services.pinecone_service import get_pinecone_service
+from app.services.mongodb_service import get_mongodb_service
 from app.utils import logger
 
 async def rag_node(state: ComplianceState) -> dict[str, Any]:
@@ -26,7 +26,7 @@ async def rag_node(state: ComplianceState) -> dict[str, Any]:
 
     # 3. Query Pinecone for top K matches (semantic search)
     # Fetching the top 5 most relevant MISRA C:2023 rules
-    pinecone_results = await query_pinecone(
+    pinecone_results = await get_pinecone_service().query(
         vector=vector,
         top_k=5,
         filter=metadata_filters
@@ -41,7 +41,7 @@ async def rag_node(state: ComplianceState) -> dict[str, Any]:
     logger.info(f"RAG_node - retrieved {len(rule_ids)} matching IDs from Pinecone", rule_ids=rule_ids)
     if rule_ids:
         # 4. Fetch the full MISRA C:2023 documents from MongoDB
-        mongo_docs = await get_misra_rules_by_pinecone_ids(rule_ids)
+        mongo_docs = await get_mongodb_service().get_misra_rules_by_pinecone_ids(rule_ids)
         logger.info(f"RAG_node - retrieved {len(mongo_docs)} documents from MongoDB based on Pinecone IDs")
         # 5. Format the documents into the TypedDict expected by LangGraph
         for doc in mongo_docs:

@@ -1,11 +1,7 @@
 # tests/unit/graph/nodes/test_rag.py
-#
-# BUG FIX: All tests previously patched `app.graph.nodes.rag.get_rules_by_ids`
-# which is the WRONG function. The node imports and calls
-# `get_misra_rules_by_pinecone_ids`. Every patch target has been corrected below.
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.graph.nodes.rag import rag_node
 
@@ -47,7 +43,15 @@ def _mongo_doc(
 
 FAKE_VECTOR = [0.1] * 768
 
-CORRECT_MONGO_MOCK = "app.graph.nodes.rag.get_misra_rules_by_pinecone_ids"
+MONGO_MOCK = "app.graph.nodes.rag.get_mongodb_service"
+PINECONE_MOCK = "app.graph.nodes.rag.get_pinecone_service"
+
+
+def _setup_pinecone_mock(mock_svc, result: dict) -> AsyncMock:
+    """Attach an AsyncMock .query() to a get_pinecone_service mock and return it."""
+    query_mock = AsyncMock(return_value=result)
+    mock_svc.return_value.query = query_mock
+    return query_mock
 
 
 # ---------------------------------------------------------------------------
@@ -55,18 +59,18 @@ CORRECT_MONGO_MOCK = "app.graph.nodes.rag.get_misra_rules_by_pinecone_ids"
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
 async def test_happy_path_returns_retrieved_rules(
-    mock_embed, mock_pinecone, mock_mongo
+    mock_embed, mock_pinecone_svc, mock_mongo_svc
 ):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(("MISRA-R1", 0.9), ("MISRA-R2", 0.7))
-    mock_mongo.return_value = [
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(("MISRA-R1", 0.9), ("MISRA-R2", 0.7)))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[
         _mongo_doc("MISRA-R1", title="Rule 1"),
         _mongo_doc("MISRA-R2", title="Rule 2"),
-    ]
+    ])
 
     result = await rag_node(_make_state("pointer arithmetic"))
 
@@ -78,13 +82,13 @@ async def test_happy_path_returns_retrieved_rules(
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_returns_correct_state_keys(mock_embed, mock_pinecone, mock_mongo):
+async def test_returns_correct_state_keys(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(("MISRA-R1", 0.8))
-    mock_mongo.return_value = [_mongo_doc("MISRA-R1")]
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(("MISRA-R1", 0.8)))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[_mongo_doc("MISRA-R1")])
 
     result = await rag_node(_make_state())
 
@@ -92,13 +96,12 @@ async def test_returns_correct_state_keys(mock_embed, mock_pinecone, mock_mongo)
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_metadata_filter_is_always_misra_c(mock_embed, mock_pinecone, mock_mongo):
+async def test_metadata_filter_is_always_misra_c(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
-    mock_mongo.return_value = []
+    _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     result = await rag_node(_make_state())
 
@@ -106,13 +109,12 @@ async def test_metadata_filter_is_always_misra_c(mock_embed, mock_pinecone, mock
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_rag_query_used_equals_state_query(mock_embed, mock_pinecone, mock_mongo):
+async def test_rag_query_used_equals_state_query(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
-    mock_mongo.return_value = []
+    _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     result = await rag_node(_make_state("my specific query"))
 
@@ -120,51 +122,51 @@ async def test_rag_query_used_equals_state_query(mock_embed, mock_pinecone, mock
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_empty_pinecone_matches_skips_mongo(mock_embed, mock_pinecone, mock_mongo):
+async def test_empty_pinecone_matches_skips_mongo(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
+    _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     result = await rag_node(_make_state())
 
-    mock_mongo.assert_not_called()
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids.assert_not_called()
     assert result["retrieved_rules"] == []
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_missing_matches_key_in_pinecone_response(mock_embed, mock_pinecone, mock_mongo):
+async def test_missing_matches_key_in_pinecone_response(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {}  # no "matches" key
+    _setup_pinecone_mock(mock_pinecone_svc, {})  # no "matches" key
 
     result = await rag_node(_make_state())
 
-    mock_mongo.assert_not_called()
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids.assert_not_called()
     assert result["retrieved_rules"] == []
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
 async def test_retrieved_rules_sorted_by_score_descending(
-    mock_embed, mock_pinecone, mock_mongo
+    mock_embed, mock_pinecone_svc, mock_mongo_svc
 ):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(
         ("MISRA-R3", 0.5),
         ("MISRA-R1", 0.95),
         ("MISRA-R2", 0.75),
-    )
-    mock_mongo.return_value = [
+    ))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[
         _mongo_doc("MISRA-R3"),
         _mongo_doc("MISRA-R1"),
         _mongo_doc("MISRA-R2"),
-    ]
+    ])
 
     result = await rag_node(_make_state())
 
@@ -173,13 +175,13 @@ async def test_retrieved_rules_sorted_by_score_descending(
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_rule_standard_is_hardcoded_to_misra_c(mock_embed, mock_pinecone, mock_mongo):
+async def test_rule_standard_is_hardcoded_to_misra_c(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(("MISRA-R1", 0.8))
-    mock_mongo.return_value = [_mongo_doc("MISRA-R1")]
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(("MISRA-R1", 0.8)))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[_mongo_doc("MISRA-R1")])
 
     result = await rag_node(_make_state())
 
@@ -187,16 +189,16 @@ async def test_rule_standard_is_hardcoded_to_misra_c(mock_embed, mock_pinecone, 
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_full_text_fallback_to_text_field(mock_embed, mock_pinecone, mock_mongo):
+async def test_full_text_fallback_to_text_field(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     """If 'full_text' is absent, 'text' key should be used as fallback."""
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(("MISRA-R1", 0.8))
-    mock_mongo.return_value = [
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(("MISRA-R1", 0.8)))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[
         {"rule_id": "MISRA-R1", "text": "fallback text content"}
-    ]
+    ])
 
     result = await rag_node(_make_state())
 
@@ -204,16 +206,16 @@ async def test_full_text_fallback_to_text_field(mock_embed, mock_pinecone, mock_
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
 async def test_missing_optional_mongo_fields_use_defaults(
-    mock_embed, mock_pinecone, mock_mongo
+    mock_embed, mock_pinecone_svc, mock_mongo_svc
 ):
     """Mongo doc with only rule_id → all optional fields fall back to defaults."""
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(("MISRA-R1", 0.6))
-    mock_mongo.return_value = [{"rule_id": "MISRA-R1"}]
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(("MISRA-R1", 0.6)))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[{"rule_id": "MISRA-R1"}])
 
     result = await rag_node(_make_state())
 
@@ -225,19 +227,19 @@ async def test_missing_optional_mongo_fields_use_defaults(
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_partial_mongo_results_are_accepted(mock_embed, mock_pinecone, mock_mongo):
+async def test_partial_mongo_results_are_accepted(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     """Pinecone returns 3 IDs but MongoDB only resolves 2 — no crash."""
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = _pinecone_result(
+    _setup_pinecone_mock(mock_pinecone_svc, _pinecone_result(
         ("MISRA-R1", 0.9), ("MISRA-R2", 0.8), ("MISRA-R3", 0.7)
-    )
-    mock_mongo.return_value = [
+    ))
+    mock_mongo_svc.return_value.get_misra_rules_by_pinecone_ids = AsyncMock(return_value=[
         _mongo_doc("MISRA-R1"),
         _mongo_doc("MISRA-R2"),
-    ]
+    ])
 
     result = await rag_node(_make_state())
 
@@ -245,18 +247,18 @@ async def test_partial_mongo_results_are_accepted(mock_embed, mock_pinecone, moc
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
 async def test_pinecone_called_with_misra_c_filter_and_top_k_5(
-    mock_embed, mock_pinecone, mock_mongo
+    mock_embed, mock_pinecone_svc, mock_mongo_svc
 ):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
+    query_mock = _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     await rag_node(_make_state("null pointer"))
 
-    mock_pinecone.assert_called_once_with(
+    query_mock.assert_called_once_with(
         vector=FAKE_VECTOR,
         top_k=5,
         filter={"scope": "MISRA C:2023"},
@@ -264,12 +266,12 @@ async def test_pinecone_called_with_misra_c_filter_and_top_k_5(
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_embedding_called_with_query_text(mock_embed, mock_pinecone, mock_mongo):
+async def test_embedding_called_with_query_text(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
+    _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     await rag_node(_make_state("array bounds check"))
 
@@ -277,13 +279,13 @@ async def test_embedding_called_with_query_text(mock_embed, mock_pinecone, mock_
 
 
 @pytest.mark.asyncio
-@patch(CORRECT_MONGO_MOCK, new_callable=AsyncMock)
-@patch("app.graph.nodes.rag.query_pinecone", new_callable=AsyncMock)
+@patch(MONGO_MOCK)
+@patch(PINECONE_MOCK)
 @patch("app.graph.nodes.rag.get_embedding", new_callable=AsyncMock)
-async def test_empty_query_string_is_handled(mock_embed, mock_pinecone, mock_mongo):
+async def test_empty_query_string_is_handled(mock_embed, mock_pinecone_svc, mock_mongo_svc):
     """State with no 'query' key should default to empty string without crash."""
     mock_embed.return_value = FAKE_VECTOR
-    mock_pinecone.return_value = {"matches": []}
+    _setup_pinecone_mock(mock_pinecone_svc, {"matches": []})
 
     result = await rag_node({})  # empty state
 

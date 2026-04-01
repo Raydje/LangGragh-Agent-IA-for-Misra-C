@@ -14,9 +14,8 @@ from pymongo import ReplaceOne
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.data.seed_rules import SEED_RULES
-from app.services.pinecone_service import upsert_vectors
 from app.services.embedding_service import EmbeddingService
-from app.services.mongodb_service import insert_rules, create_indexes, get_rules_collection
+from app.services.mongodb_service import MongoDBService
 from app.utils import logger
 
 
@@ -96,8 +95,8 @@ async def upload_to_mongodb(rules: list[dict]):
         return
 
     logger.info("Connecting to MongoDB Atlas...")
-    collection = await get_rules_collection()
-    await create_indexes()
+    svc = MongoDBService()
+    await svc.create_indexes()
 
     logger.info(f"Preparing to insert/update {len(rules)} rules...")
 
@@ -107,7 +106,7 @@ async def upload_to_mongodb(rules: list[dict]):
         operations.append(ReplaceOne(query, rule, upsert=True))
 
     if operations:
-        result = await collection.bulk_write(operations)
+        result = await svc.collection.bulk_write(operations)
         logger.info(f"✅ Successfully processed {len(rules)} rules in MongoDB!")
         logger.info(f"   - Inserted: {result.upserted_count}")
         logger.info(f"   - Modified: {result.modified_count}")

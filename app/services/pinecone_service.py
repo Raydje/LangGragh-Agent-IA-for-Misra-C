@@ -3,12 +3,18 @@ from pinecone import Pinecone, ServerlessSpec
 from app.config import get_settings
 from app.utils import logger
 
-_index = None
+_service: "PineconeService | None" = None
 
 
-def _get_index():
-    global _index
-    if _index is None:
+def get_pinecone_service() -> "PineconeService":
+    global _service
+    if _service is None:
+        _service = PineconeService()
+    return _service
+
+
+class PineconeService:
+    def __init__(self) -> None:
         settings = get_settings()
         pc = Pinecone(api_key=settings.pinecone_api_key)
 
@@ -24,43 +30,39 @@ def _get_index():
                 ),
             )
 
-        _index = pc.Index(settings.pinecone_index_name)
-    return _index
+        self.index = pc.Index(settings.pinecone_index_name)
 
+    async def query(
+        self,
+        vector: list[float],
+        top_k: int = 5,
+        filter: dict | None = None,
+    ) -> dict:
+        results = await asyncio.to_thread(
+            self.index.query,
+            vector=vector,
+            top_k=top_k,
+            filter=filter,
+            include_metadata=True,
+        )
+        logger.info(f"Pinecone query returned {len(results.matches)} matches.")
+        return {
+            "matches": [
+                {
+                    "id": m.id,
+                    "score": m.score,
+                    "metadata": m.metadata or {},
+                }
+                for m in results.matches
+            ]
+        }
 
-async def query_pinecone(
-    vector: list[float],
-    top_k: int = 5,
-    filter: dict | None = None,
-) -> dict:
-    index = _get_index()
-    results = await asyncio.to_thread(
-        index.query,
-        vector=vector,
-        top_k=top_k,
-        filter=filter,
-        include_metadata=True,
-    )
-    logger.info(f"Pinecone query returned {len(results.matches)} matches.")
-    return {
-        "matches": [
-            {
-                "id": m.id,
-                "score": m.score,
-                "metadata": m.metadata or {},
-            }
-            for m in results.matches
-        ]
-    }
-
-
-async def upsert_vectors(vectors: list[dict]) -> int:
-    index = _get_index()
-    batch_size = 100
-    total = 0
-    for i in range(0, len(vectors), batch_size):
-        batch = vectors[i : i + batch_size]
-        await asyncio.to_thread(index.upsert, vectors=batch)
-        logger.info(f"Successfully upserted {len(batch)} vectors to Pinecone!")
-        total += len(batch)
-    return total
+    async def upsert_vectors(self, vectors: list[dict]) -> int:
+        batch_size = 100
+        total = 0
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i : i + batch_size]
+            await asyncio.to_thread(self.index.upsert, vectors=batch)
+            logger.info(f"Successfully upserted {len(batch)} vectors to Pinecone!")
+            total += len(batch)
+        return total
