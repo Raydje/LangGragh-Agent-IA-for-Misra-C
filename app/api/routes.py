@@ -1,6 +1,8 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Security
 from app.models.requests import ComplianceQueryRequest
+from app.auth.dependencies import get_current_principal
+from app.auth.models import Principal
 from app.models.responses import (
     ComplianceQueryResponse,
     HealthResponse,
@@ -54,6 +56,7 @@ async def query_compliance(
     request: Request,
     body: ComplianceQueryRequest,
     graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["query:read"]),
 ):
     """Main endpoint to trigger the LangGraph multi-agent compliance check."""
     settings = get_settings()
@@ -79,7 +82,10 @@ async def query_compliance(
 
 @router.post("/seed", response_model=IngestResponse)
 @limiter.limit("2/minute")
-async def seed_database(request: Request):
+async def seed_database(
+    request: Request,
+    principal: Principal = Security(get_current_principal, scopes=["admin:seed"]),
+):
     """Endpoint to trigger the ingestion of rules into MongoDB and Pinecone."""
     result = await ingest()
     return IngestResponse(
@@ -95,6 +101,7 @@ async def replay_from_checkpoint(
     thread_id: str = Path(..., description="Thread ID of the session to replay"),
     checkpoint_id: str = Path(..., description="Checkpoint ID to fork execution from"),
     graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["admin:replay"]),
 ):
     """
     Forks graph execution from a specific SQLite-backed checkpoint.
@@ -129,7 +136,8 @@ async def replay_from_checkpoint(
 async def get_thread_history(
     request: Request,
     thread_id: str,
-    graph=Depends(get_compiled_graph)
+    graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["query:read"]),
 ):
     """Retrieves all checkpoint snapshots for a thread, newest-to-oldest (for debugging)."""
     config = {"configurable": {"thread_id": thread_id}}

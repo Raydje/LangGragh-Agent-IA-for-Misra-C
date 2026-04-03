@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     critique_temperature: float = 0.0
     remediation_temperature: float = 0.2
 
+    # Auth (JWT)
+    jwt_secret_key: str  # Required — set in .env; rotate to invalidate all tokens
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 30
+    # Optional token that allows a registration request to gain admin scopes.
+    # Leave empty to disable admin self-registration.
+    admin_registration_token: str = ""
+
     # CORS
     cors_allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:8501", "http://localhost:8080"]
 
