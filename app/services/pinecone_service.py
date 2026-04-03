@@ -3,14 +3,9 @@ from pinecone import Pinecone, ServerlessSpec
 from app.config import get_settings
 from app.utils import logger
 
-_service: "PineconeService | None" = None
-
 
 def get_pinecone_service() -> "PineconeService":
-    global _service
-    if _service is None:
-        _service = PineconeService()
-    return _service
+    return PineconeService()
 
 
 class PineconeService:
@@ -38,24 +33,32 @@ class PineconeService:
         top_k: int = 5,
         filter: dict | None = None,
     ) -> dict:
-        results = await asyncio.to_thread(
-            self.index.query,
-            vector=vector,
-            top_k=top_k,
-            filter=filter,
-            include_metadata=True,
-        )
-        logger.info(f"Pinecone query returned {len(results.matches)} matches.")
-        return {
-            "matches": [
-                {
-                    "id": m.id,
-                    "score": m.score,
-                    "metadata": m.metadata or {},
-                }
-                for m in results.matches
-            ]
-        }
+        settings = get_settings()
+        try:
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.index.query,
+                    vector=vector,
+                    top_k=top_k,
+                    filter=filter,
+                    include_metadata=True,
+                ),
+                timeout=settings.pinecone_timeout,
+            )
+            logger.info(f"Pinecone query returned {len(results.matches)} matches.")
+            return {
+                "matches": [
+                    {
+                        "id": m.id,
+                        "score": m.score,
+                        "metadata": m.metadata or {},
+                    }
+                    for m in results.matches
+                ]
+            }
+        except asyncio.TimeoutError:
+            logger.error(f"Pinecone query timed out {settings.pinecone_timeout} seconds. try healthy check on Pinecone index.")
+            return {"matches": []}            
 
     async def upsert_vectors(self, vectors: list[dict]) -> int:
         batch_size = 100

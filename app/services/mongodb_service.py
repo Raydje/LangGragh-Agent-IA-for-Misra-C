@@ -1,27 +1,20 @@
+import asyncio
 import re
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from app.config import get_settings
+from app.utils import logger
 
 _INDEX_FIELDS = [("rule_type", 1), ("section", 1), ("rule_number", 1)]
 _ID_RE = re.compile(r'^MISRA_(RULE|DIR)_(\d+)\.(\d+)$')
 
-_service: "MongoDBService | None" = None
-_service_checkers: "MongoDBCheckpointService | None" = None
-
 
 def get_mongodb_service() -> "MongoDBService":
-    global _service
-    if _service is None:
-        _service = MongoDBService()
-    return _service
+    return MongoDBService()
 
 def get_mongodb_checkpoint_service() -> "MongoDBCheckpointService":
-    global _service_checkers
-    if _service_checkers is None:
-        _service_checkers = MongoDBCheckpointService()
-    return _service_checkers
+    return MongoDBCheckpointService()
 
 # Sync pymongo client — MongoDBSaver (langgraph-checkpoint-mongodb) requires pymongo, not Motor.
 class MongoDBCheckpointService:
@@ -46,8 +39,14 @@ class MongoDBService:
         self.client.close()
 
     async def get_rules_by_ids(self, rule_ids: list[str]) -> list[dict]:
-        cursor = self.collection.find({"rule_id": {"$in": rule_ids}}, {"_id": 0})
-        return await cursor.to_list(length=100)
+        settings = get_settings()
+        try:
+            cursor = asyncio.wait_for(self.collection.find({"rule_id": {"$in": rule_ids}}, {"_id": 0}),
+                                        timeout=settings.mongodb_timeout)
+            return await cursor.to_list(length=100)
+        except asyncio.TimeoutError:
+            logger.error(f"MongoDB query timed out {settings.mongodb_timeout} seconds. try healthy check on MongoDB connection.")
+            return []
 
     async def get_misra_rules_by_pinecone_ids(self, rule_ids: list[str]) -> list[dict]:
         """
@@ -57,7 +56,7 @@ class MongoDBService:
         """
         or_conditions = []
         id_map: dict[tuple, str] = {}  # (rule_type, section, rule_number) -> original Pinecone ID
-
+        settings = get_settings()
         for rid in rule_ids:
             m = _ID_RE.match(rid)
             if m:
@@ -67,15 +66,18 @@ class MongoDBService:
 
         if not or_conditions:
             return []
+        try:
+            cursor = self.collection.find({"$or": or_conditions}, {"_id": 0})
+            docs = await asyncio.wait_for(cursor.to_list(length=100), timeout=settings.mongodb_timeout)
 
-        cursor = self.collection.find({"$or": or_conditions}, {"_id": 0})
-        docs = await cursor.to_list(length=100)
+            for doc in docs:
+                key = (doc.get("rule_type"), doc.get("section"), doc.get("rule_number"))
+                doc["rule_id"] = id_map.get(key, "")
 
-        for doc in docs:
-            key = (doc.get("rule_type"), doc.get("section"), doc.get("rule_number"))
-            doc["rule_id"] = id_map.get(key, "")
-
-        return docs
+            return docs
+        except asyncio.TimeoutError:
+            logger.error(f"MongoDB query timed out {settings.mongodb_timeout} seconds. try healthy check on MongoDB connection.")
+            return []
 
     async def get_rules_by_metadata(self, filters: dict) -> list[dict]:
         """Find MISRA rules by metadata fields.

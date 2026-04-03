@@ -19,12 +19,14 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "compliance-rules"
     pinecone_cloud: str = "aws"
     pinecone_region: str = "us-east-1"
+    pinecone_timeout: int = 15  # seconds
 
-    # MongoDB for MISRA rules storage
+    # MongoDB for MISRA rules storage + checkpoints storage for LangGraph
     mongodb_uri: str
     mongodb_database: str = "compliance_db"
     mongodb_collection: str = "rules"
     mongodb_checkpoints_collection: str = "checkpoints"
+    mongodb_timeout: int = 15  # seconds
 
     # Input validation
     max_input_length: int = 3000
