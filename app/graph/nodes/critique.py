@@ -1,3 +1,4 @@
+import asyncio
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.state import ComplianceState, CritiqueEntry
@@ -72,7 +73,23 @@ Based on the 5 criteria, generate your structured verdict."""
     ]
 
     # Use with_structured_output for guaranteed Pydantic-validated output
-    raw_result = await structured_llm.ainvoke(messages)
+    try:
+        raw_result = await asyncio.wait_for(
+            structured_llm.ainvoke(messages),
+            timeout=settings.llm_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Critique LLM call timed out after {settings.llm_timeout} seconds.")
+        return {
+            "critique_approved": False,
+            "critique_feedback": "Critique timed out; validation will be re-run.",
+            "critique_history": [],
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "critique_tokens": 0,
+            "estimated_cost": 0.0,
+        }
 
     try:
         result: CritiqueOutput = raw_result["parsed"]

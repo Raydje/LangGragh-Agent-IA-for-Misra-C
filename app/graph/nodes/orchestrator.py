@@ -1,3 +1,4 @@
+import asyncio
 from typing import Literal
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
@@ -51,10 +52,26 @@ async def orchestrate(state: ComplianceState) -> dict:
     chain = prompt | structured_llm
 
     # Invoke the chain with the current state data
-    raw_result = await chain.ainvoke({
-        "query": query,
-        "code": code_snippet if code_snippet else "None provided."
-    })
+    try:
+        raw_result = await asyncio.wait_for(
+            chain.ainvoke({
+                "query": query,
+                "code": code_snippet if code_snippet else "None provided."
+            }),
+            timeout=settings.llm_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Orchestrator LLM call timed out after {settings.llm_timeout} seconds.")
+        return {
+            "intent": "search",
+            "orchestrator_reasoning": "Orchestrator timed out; defaulting to search.",
+            "standard": state.get("standard", "MISRA C:2023"),
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "orchestrator_tokens": 0,
+            "estimated_cost": 0.0,
+        }
 
     try:
         result: OrchestratorOutput = raw_result["parsed"]

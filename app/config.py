@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     mongodb_checkpoints_collection: str = "checkpoints"
     mongodb_timeout: int = 15  # seconds
 
+    # LLM timeout
+    llm_timeout: int = 30  # seconds
+
     # Input validation
     max_input_length: int = 3000
 

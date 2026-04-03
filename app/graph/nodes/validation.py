@@ -1,3 +1,4 @@
+import asyncio
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.state import ComplianceState
@@ -96,7 +97,21 @@ Provide your structured validation verdict."""
     ]
 
     # Use with_structured_output for guaranteed Pydantic-validated output
-    raw_result = await structured_llm.ainvoke(messages)
+    try:
+        raw_result = await asyncio.wait_for(
+            structured_llm.ainvoke(messages),
+            timeout=settings.llm_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Validation LLM call timed out after {settings.llm_timeout} seconds.")
+        return {
+            "validation_result": "Validation timed out: LLM did not respond in time.",
+            "is_compliant": False,
+            "confidence_score": 0.0,
+            "cited_rules": [],
+            "iteration_count": iteration + 1,
+            "estimated_cost": 0.0,
+        }
 
     try:
         result: ValidationOutput = raw_result["parsed"]
