@@ -2,7 +2,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from app.api.routes import router
+from app.api.v1.routes import router
+from app.auth.router import auth_router
 from app.config import get_settings
 from app.utils import logger
 from app.graph.builder import build_graph
@@ -42,6 +43,13 @@ async def lifespan(app: FastAPI):
                                 db_name=app.state.mongodb_checkpoint.db.name,
                                 collection=app.state.mongodb_checkpoint.collection.name)
     app.state.graph = await build_graph(checkpointer=checkpointer)
+
+    # Create auth indexes (idempotent — safe to call on every restart)
+    auth_db = app.state.mongodb.db
+    await auth_db["users"].create_index("email", unique=True)
+    await auth_db["api_keys"].create_index("key_id")
+    await auth_db["api_keys"].create_index("user_id")
+    logger.info("[Startup] Auth indexes ensured (users.email, api_keys.key_id, api_keys.user_id)")
 
     yield
 
@@ -99,3 +107,4 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # Include the routes defined in routes.py
 app.include_router(router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")

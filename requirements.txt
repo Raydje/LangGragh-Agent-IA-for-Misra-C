@@ -10,6 +10,7 @@ motor==3.7.1
 pinecone==8.1.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
+email-validator==2.3.0
 python-dotenv==1.2.2
 structlog==25.5.0
 requests==2.33.0
@@ -23,3 +24,6 @@ msgpack==1.1.2
 slowapi==0.1.9
 redis==7.4.0
 limits==5.8.0
+python-jose[cryptography]==3.5.0
+bcrypt==5.0.0
+python-multipart==0.0.22

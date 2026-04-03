@@ -5,7 +5,7 @@ class CritiqueDetail(BaseModel):
     iteration: int
     issues_found: list[str]
     approved: bool
-    
+
 class MetadataUsage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
@@ -15,7 +15,7 @@ class MetadataUsage(BaseModel):
     critique_tokens: Optional[int] = None
     remediation_tokens: Optional[int] = None
     estimated_cost: Optional[float] = None
-    
+
 
 class ComplianceQueryResponse(BaseModel):
     thread_id: str
@@ -31,14 +31,14 @@ class ComplianceQueryResponse(BaseModel):
     error: Optional[str] = None
     fixed_code_snippet: Optional[str] = None
     remediation_explanation: Optional[str] = None
-    # Metadata
     total_tokens_usage: MetadataUsage
-    
+
 
 class HealthResponse(BaseModel):
     status: str
     mongodb_connected: bool
     pinecone_connected: bool
+
 
 class IngestResponse(BaseModel):
     message: str

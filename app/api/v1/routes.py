@@ -1,7 +1,9 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
-from app.models.requests import ComplianceQueryRequest
-from app.models.responses import (
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Security
+from app.api.v1.requests import ComplianceQueryRequest
+from app.auth.dependencies import get_current_principal
+from app.auth.models import Principal
+from app.api.v1.responses import (
     ComplianceQueryResponse,
     HealthResponse,
     IngestResponse,
@@ -54,10 +56,10 @@ async def query_compliance(
     request: Request,
     body: ComplianceQueryRequest,
     graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["query:read"]),
 ):
     """Main endpoint to trigger the LangGraph multi-agent compliance check."""
     settings = get_settings()
-    # Initialize the LangGraph State
     initial_state = {
         "query": body.query,
         "code_snippet": body.code_snippet or "",
@@ -68,7 +70,6 @@ async def query_compliance(
     }
 
     try:
-        # Use caller-supplied thread_id for conversation continuity, or mint a new one
         thread_id = body.thread_id or str(uuid.uuid4())
         config = {"configurable": {"thread_id": thread_id}}
         result = await graph.ainvoke(initial_state, config=config)
@@ -79,7 +80,10 @@ async def query_compliance(
 
 @router.post("/seed", response_model=IngestResponse)
 @limiter.limit("2/minute")
-async def seed_database(request: Request):
+async def seed_database(
+    request: Request,
+    principal: Principal = Security(get_current_principal, scopes=["admin:seed"]),
+):
     """Endpoint to trigger the ingestion of rules into MongoDB and Pinecone."""
     result = await ingest()
     return IngestResponse(
@@ -95,9 +99,10 @@ async def replay_from_checkpoint(
     thread_id: str = Path(..., description="Thread ID of the session to replay"),
     checkpoint_id: str = Path(..., description="Checkpoint ID to fork execution from"),
     graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["admin:replay"]),
 ):
     """
-    Forks graph execution from a specific SQLite-backed checkpoint.
+    Forks graph execution from a specific MongoDB-backed checkpoint.
     Loads the state saved at checkpoint_id and re-runs from that node forward.
     """
     config = {
@@ -107,7 +112,6 @@ async def replay_from_checkpoint(
         }
     }
 
-    # Validate the checkpoint exists before attempting replay
     checkpoint_state = await graph.aget_state(config)
     if not checkpoint_state or not checkpoint_state.values:
         raise HTTPException(
@@ -116,11 +120,10 @@ async def replay_from_checkpoint(
         )
 
     try:
-        # None input signals LangGraph to resume from the checkpoint's saved state
         result = await graph.ainvoke(None, config=config)
     except Exception as e:
         logger.exception("Replay failed for thread=%s checkpoint=%s", thread_id, checkpoint_id)
-        raise HTTPException(status_code=500, detail=f"Replay failed: maybe wrong checkpoint_id or gemini is down")
+        raise HTTPException(status_code=500, detail="Replay failed: maybe wrong checkpoint_id or gemini is down")
 
     return _build_response(thread_id, result)
 
@@ -129,7 +132,8 @@ async def replay_from_checkpoint(
 async def get_thread_history(
     request: Request,
     thread_id: str,
-    graph=Depends(get_compiled_graph)
+    graph=Depends(get_compiled_graph),
+    principal: Principal = Security(get_current_principal, scopes=["query:read"]),
 ):
     """Retrieves all checkpoint snapshots for a thread, newest-to-oldest (for debugging)."""
     config = {"configurable": {"thread_id": thread_id}}
