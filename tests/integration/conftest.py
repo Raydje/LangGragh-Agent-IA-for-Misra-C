@@ -22,7 +22,6 @@ Design principles
   setdefault does not replace them with dummy values.
 """
 
-import asyncio
 import os
 
 import pytest
@@ -69,30 +68,6 @@ def pytest_collection_modifyitems(items: list, config: object) -> None:  # noqa:
     for item in items:
         if "integration" in str(item.fspath):
             item.add_marker(skip_marker)
-
-
-# ---------------------------------------------------------------------------
-# Session-scoped event loop — all session-scoped async fixtures (Motor client,
-# httpx inside GoogleGenerativeAIEmbeddings, etc.) must share a single event
-# loop that outlives any individual test function.  Without this, Motor and
-# httpx clients created during the first test become orphaned when pytest-asyncio
-# tears down the per-function loop before the next test, causing timeouts and
-# "Event loop is closed" errors.
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """
-    Provide a single event loop for the entire integration test session.
-
-    pytest-asyncio defaults to a per-function loop which is incompatible with
-    session-scoped fixtures that hold async I/O resources (Motor, httpx).
-    This fixture overrides that default for the integration suite only.
-    """
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 # ---------------------------------------------------------------------------
