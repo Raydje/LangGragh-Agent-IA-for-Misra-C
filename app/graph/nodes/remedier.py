@@ -1,10 +1,11 @@
 import asyncio
+from typing import Any
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.state import ComplianceState
 from app.services.llm_service import get_structured_llm
 from app.config import get_settings
-from app.utils import calculate_gemini_cost, extracting_tokens_metadata, logger
+from app.utils import extracting_tokens_metadata, logger
 
 
 # Structured output schema — guarantees valid typed output from the LLM
@@ -21,7 +22,7 @@ class RemediationOutput(BaseModel):
     )
 
 
-async def remediate_code(state: ComplianceState) -> dict:
+async def remediate_code(state: ComplianceState) -> dict[str, Any]:
     """
     Remediation Node: Takes a non-compliant C code snippet and attempts to fix it
     based on the cited rules and validation results.

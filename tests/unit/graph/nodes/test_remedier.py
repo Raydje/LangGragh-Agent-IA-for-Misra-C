@@ -233,14 +233,3 @@ async def test_human_message_contains_validation_result(mock_get_structured_llm)
     messages = mock_get_structured_llm.return_value.ainvoke.call_args[0][0]
     assert validation in messages[1].content
 
-
-@patch("app.graph.nodes.remedier.calculate_gemini_cost")
-@patch("app.graph.nodes.remedier.get_structured_llm")
-async def test_estimated_cost_uses_calculate_gemini_cost(mock_get_structured_llm, mock_cost):
-    mock_get_structured_llm.return_value = _mock_structured_llm(VALID_OUTPUT, input_tokens=100, output_tokens=50)
-    mock_cost.return_value = 0.0042
-
-    result = await remediate_code(_make_state())
-
-    mock_cost.assert_called_with(100, 50)
-    assert result["estimated_cost"] == 0.0042

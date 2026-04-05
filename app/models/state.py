@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, TypedDict, Annotated, Literal
+from typing import TypedDict, Annotated, Literal, NotRequired
 import operator
 
 
@@ -22,47 +22,45 @@ class CritiqueEntry(TypedDict):
 class ComplianceState(TypedDict):
     # Input
     query: str
-    code_snippet: str
     standard: str
+    code_snippet: NotRequired[str]
 
     # Orchestrator
-    intent: Literal["search", "validate", "explain"]
-    orchestrator_reasoning: str
+    intent: NotRequired[Literal["search", "validate", "explain"]]
+    orchestrator_reasoning: NotRequired[str]
 
     # RAG
-    retrieved_rules: list[RetrievedRule]
-    rag_query_used: str
-    metadata_filters_applied: dict
+    retrieved_rules: NotRequired[list[RetrievedRule]]
+    rag_query_used: NotRequired[str]
+    metadata_filters_applied: NotRequired[dict]
 
     # Validation
-    validation_result: str
-    is_compliant: bool
-    confidence_score: float
-    cited_rules: list[str]
+    validation_result: NotRequired[str]
+    is_compliant: NotRequired[bool]
+    confidence_score: NotRequired[float]
+    cited_rules: NotRequired[list[str]]
 
     # Critique loop
-    critique_feedback: str
-    critique_approved: bool
-    iteration_count: int
-    max_iterations: int
-    critique_history: Annotated[list[CritiqueEntry], operator.add]
-    
-    # Remediation
-    fixed_code_snippet: str
-    remediation_explanation: str
+    critique_feedback: NotRequired[str]
+    critique_approved: NotRequired[bool]
+    iteration_count: NotRequired[int]
+    max_iterations: NotRequired[int]
+    critique_history: NotRequired[Annotated[list[CritiqueEntry], operator.add]]
 
-    
+    # Remediation
+    fixed_code_snippet: NotRequired[str]
+    remediation_explanation: NotRequired[str]
+
     # Metadata
-    prompt_tokens: Annotated[int, operator.add]
-    completion_tokens: Annotated[int, operator.add]
-    total_tokens: Annotated[int, operator.add]
-    orchestrator_tokens: Annotated[int, operator.add]
-    validation_tokens: Annotated[int, operator.add]
-    critique_tokens: Annotated[int, operator.add]
-    remediation_tokens: Annotated[int, operator.add]
-    estimated_cost: Annotated[float, operator.add]
-    
+    prompt_tokens: NotRequired[Annotated[int, operator.add]]
+    completion_tokens: NotRequired[Annotated[int, operator.add]]
+    total_tokens: NotRequired[Annotated[int, operator.add]]
+    orchestrator_tokens: NotRequired[Annotated[int, operator.add]]
+    validation_tokens: NotRequired[Annotated[int, operator.add]]
+    critique_tokens: NotRequired[Annotated[int, operator.add]]
+    remediation_tokens: NotRequired[Annotated[int, operator.add]]
+    estimated_cost: NotRequired[Annotated[float, operator.add]]
 
     # Output
-    final_response: str
-    error: str
+    final_response: NotRequired[str]
+    error: NotRequired[str]

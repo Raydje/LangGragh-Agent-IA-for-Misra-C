@@ -1,10 +1,11 @@
 import asyncio
+from typing import Any
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.state import ComplianceState
 from app.services.llm_service import get_structured_llm
 from app.config import get_settings
-from app.utils import calculate_gemini_cost, extracting_tokens_metadata,logger
+from app.utils import extracting_tokens_metadata,logger
 
 
 # Structured output schema — guarantees valid typed output from the LLM
@@ -30,7 +31,7 @@ class ValidationOutput(BaseModel):
     )
 
 
-async def validation_node(state: ComplianceState) -> dict:
+async def validation_node(state: ComplianceState) -> dict[str, Any]:
     """
     Evaluates the provided code snippet against the retrieved MISRA C:2023 rules.
     Takes critique feedback into account if this is a subsequent iteration.

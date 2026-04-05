@@ -13,7 +13,6 @@ from pymongo import ReplaceOne
 # Ensure project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from app.data.seed_rules import SEED_RULES
 from app.services.embedding_service import EmbeddingService
 from app.services.mongodb_service import MongoDBService
 from app.utils import logger

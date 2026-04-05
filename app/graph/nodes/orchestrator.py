@@ -1,11 +1,11 @@
 import asyncio
-from typing import Literal
+from typing import Literal, Any
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from app.models.state import ComplianceState
 from app.services.llm_service import get_structured_llm
 from app.config import get_settings
-from app.utils import calculate_gemini_cost, extracting_tokens_metadata,logger
+from app.utils import  extracting_tokens_metadata, logger
 
 # 1. Define the desired structured output schema
 class OrchestratorOutput(BaseModel):
@@ -17,7 +17,7 @@ class OrchestratorOutput(BaseModel):
     )
 
 # 2. Define the Orchestrator Node function
-async def orchestrate(state: ComplianceState) -> dict:
+async def orchestrate(state: ComplianceState) -> dict[str, Any]:
     """
     Analyzes the user's query and code snippet to determine the workflow intent.
     Currently focused entirely on MISRA C:2023 compliance.
