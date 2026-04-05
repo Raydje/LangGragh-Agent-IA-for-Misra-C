@@ -41,7 +41,7 @@ class PineconeService:
                 ),
                 timeout=settings.pinecone_timeout,
             )
-            logger.info(f"Pinecone query returned {len(results.matches)} matches.")
+            logger.info("Pinecone query returned matches.", number_matches=len(results.matches))  # type: ignore[union-attr]
             return {
                 "matches": [
                     {
@@ -49,7 +49,7 @@ class PineconeService:
                         "score": m.score,
                         "metadata": m.metadata or {},
                     }
-                    for m in results.matches
+                    for m in results.matches  # type: ignore[union-attr]
                 ]
             }
         except asyncio.TimeoutError:
@@ -61,7 +61,7 @@ class PineconeService:
         total = 0
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i : i + batch_size]
-            await asyncio.to_thread(self.index.upsert, vectors=batch)
-            logger.info(f"Successfully upserted {len(batch)} vectors to Pinecone!")
+            await asyncio.to_thread(self.index.upsert, vectors=batch)  # type: ignore[arg-type]
+            logger.info("Successfully upserted vectors to Pinecone.", number_upserted=len(batch))
             total += len(batch)
         return total

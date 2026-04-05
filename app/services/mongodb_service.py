@@ -14,7 +14,7 @@ _ID_RE = re.compile(r'^MISRA_(RULE|DIR)_(\d+)\.(\d+)$')
 class MongoDBCheckpointService:
     def __init__(self) -> None:
         settings = get_settings()
-        self.client = MongoClient(settings.mongodb_uri)
+        self.client: MongoClient = MongoClient(settings.mongodb_uri)
         self.db = self.client[settings.mongodb_database]
         self.collection: Collection = self.db[settings.mongodb_checkpoints_collection]
 
@@ -31,7 +31,7 @@ class MongoDBService:
         # operation deadlines natively, rather than relying on asyncio.wait_for
         # which cancels the coroutine mid-flight and can leave the connection
         # pool in an inconsistent state.
-        self.client = AsyncIOMotorClient(
+        self.client: AsyncIOMotorClient = AsyncIOMotorClient(
             settings.mongodb_uri,
             serverSelectionTimeoutMS=timeout_ms,
             connectTimeoutMS=timeout_ms,

@@ -107,7 +107,7 @@ Based on the 5 criteria, generate your structured verdict."""
         logger.error("Critique failed to parse structured output.", error=str(e))
         approved = False
         feedback = "Critique system failed to produce valid output. Please simplify your validation output."
-        critique_entry: CritiqueEntry = {
+        critique_entry = {
             "iteration": state.get("iteration_count", 0) + 1,
             "issues_found": [feedback],
             "approved": False,

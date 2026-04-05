@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import asyncio
+from typing import Any
 from pathlib import Path
 from pymongo import ReplaceOne
 
@@ -29,7 +30,7 @@ def parse_misra_file(filepath: str) -> list[dict]:
     base_dir = Path(__file__).resolve().parent.parent.parent
     file_path = base_dir / filepath
     
-    logger.info(f"📂 Attempting to read file: {file_path}")
+    logger.info("📂 Attempting to read file", file_path=file_path)
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -38,7 +39,7 @@ def parse_misra_file(filepath: str) -> list[dict]:
         logger.error("Error: Could not find file", file_path=file_path)
         return []
 
-    current_rule = None
+    current_rule: dict[str, Any] | None = None
 
     # Regex to match lines like: "Rule 1.1    Required", "Dir 4.1\tRequired", or "Rule 22.15\tMandatory"
     header_pattern = re.compile(r'^(Rule|Dir)\s+(\d+)\.(\d+)\s+(.+)$')
@@ -97,7 +98,7 @@ async def upload_to_mongodb(rules: list[dict]):
     svc = MongoDBService()
     await svc.create_indexes()
 
-    logger.info(f"Preparing to insert/update {len(rules)} rules...")
+    logger.info("Preparing to insert/update rules...", number_of_rules=len(rules))
 
     operations = []
     for rule in rules:
@@ -106,9 +107,9 @@ async def upload_to_mongodb(rules: list[dict]):
 
     if operations:
         result = await svc.collection.bulk_write(operations)
-        logger.info(f"✅ Successfully processed {len(rules)} rules in MongoDB!")
-        logger.info(f"   - Inserted: {result.upserted_count}")
-        logger.info(f"   - Modified: {result.modified_count}")
+        logger.info("✅ Successfully processed rules in MongoDB!", number_of_rules=len(rules))
+        logger.info("   - Inserted:", number_inserted=result.upserted_count)
+        logger.info("   - Modified:", number_modified=result.modified_count)
 
 async def main() -> dict:
     # Test the parser
@@ -116,7 +117,7 @@ async def main() -> dict:
     parsed_rules = parse_misra_file(target_file)
 
     if parsed_rules:
-        logger.info(f"✅ Successfully parsed {len(parsed_rules)} rules!\n")
+        logger.info("✅ Successfully parsed rules!", number_of_rules=len(parsed_rules))
         logger.info("Sample of the first parsed rule:")
         logger.info(json.dumps(parsed_rules[0], indent=2))
 

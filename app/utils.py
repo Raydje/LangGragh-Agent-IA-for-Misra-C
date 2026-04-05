@@ -1,5 +1,6 @@
 import json
 import re
+from typing import Any
 import structlog
 from app.config import get_settings
 
@@ -20,7 +21,7 @@ def calculate_gemini_cost(prompt_tokens: int, completion_tokens: int) -> float:
     output_cost = (completion_tokens / 1_000_000) * settings.gemini_2_5_flash_output_cost_per_1m
     return input_cost + output_cost 
 
-def extracting_tokens_metadata(raw_result : object) -> dict:
+def extracting_tokens_metadata(raw_result: dict[str, Any]) -> dict:
     usage = getattr(raw_result.get("raw"), "usage_metadata", None) or {}
     input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)

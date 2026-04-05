@@ -21,7 +21,7 @@ class EmbeddingService:
         if not rules:
             return 0
 
-        logger.info(f"Generating embeddings for {len(rules)} rules...")
+        logger.info("Generating embeddings for {len(rules)} rules...", number_of_rules=len(rules))
         
         texts = [rule["full_text"] for rule in rules]
 
@@ -51,5 +51,5 @@ class EmbeddingService:
 
         logger.info("Delegating upload to pinecone_service...")
         upserted = await PineconeService().upsert_vectors(vectors)
-        logger.info(f"✅ Successfully passed {len(vectors)} embeddings to Pinecone!")
+        logger.info("✅ Successfully passed embeddings to Pinecone!", number_of_embeddings=len(vectors))
         return upserted

@@ -22,18 +22,18 @@ async def lifespan(app: FastAPI):
     """Initialise all services and the LangGraph agent on startup; tear down on shutdown."""
     settings = get_settings()
     logger.info("[Startup] Loaded config for standard: MISRA C:2023")
-    logger.info(f"[Startup] Gemini model: {settings.gemini_model}")
-    logger.info(f"[Startup] MongoDB: ********/{settings.mongodb_database}")
-    logger.info(f"[Startup] Pinecone index: {settings.pinecone_index_name}")
+    logger.info("[Startup] Gemini model", model_name=settings.gemini_model)
+    logger.info("[Startup] MongoDB", database=settings.mongodb_database)
+    logger.info("[Startup] Pinecone index", index_name=settings.pinecone_index_name, cloud=settings.pinecone_cloud, region=settings.pinecone_region)
 
     # Validate Redis connection (fail-fast with clear log)
     try:
         _r = redis_sync.from_url(settings.redis_uri, socket_connect_timeout=3)
         _r.ping()
         _r.close()
-        logger.info(f"[Startup] Redis connected: {settings.redis_host}:{settings.redis_port}")
+        logger.info("[Startup] Redis connected", host=settings.redis_host, port=settings.redis_port)
     except Exception as e:
-        logger.warning(f"[Startup] Redis unavailable — rate limiting degraded to in-memory: {e}")
+        logger.warning("[Startup] Redis unavailable — rate limiting degraded to in-memory", error=str(e))
 
     # app.state holds the same reference — used by route dependencies.
     app.state.mongodb = MongoDBService()

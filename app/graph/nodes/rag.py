@@ -18,6 +18,13 @@ async def rag_node(state: ComplianceState, config: RunnableConfig) -> dict[str, 
     mongo_db = config["configurable"].get("mongo_db")
     pinecone_service = config["configurable"].get("pinecone_service")
     embedding_service = config["configurable"].get("embedding_service")
+
+    if embedding_service is None:
+        raise ValueError("embedding_service is not configured")
+    if pinecone_service is None:
+        raise ValueError("pinecone_service is not configured")
+    if mongo_db is None:
+        raise ValueError("mongo_db is not configured")
     
     logger.info("RAG_node invoked", query=state.get("query", ""))
     query = state.get("query", "")
@@ -44,11 +51,11 @@ async def rag_node(state: ComplianceState, config: RunnableConfig) -> dict[str, 
     scores_map = {match["id"]: match.get("score", 0.0) for match in matches}
 
     retrieved_rules: list[RetrievedRule] = []
-    logger.info(f"RAG_node - retrieved {len(rule_ids)} matching IDs from Pinecone", rule_ids=rule_ids)
+    logger.info("RAG_node - retrieved {len(rule_ids)} matching IDs from Pinecone", rule_ids=rule_ids)
     if rule_ids:
         # 4. Fetch the full documents from MongoDB
         mongo_docs = await mongo_db.get_misra_rules_by_pinecone_ids(rule_ids)
-        logger.info(f"RAG_node - retrieved {len(mongo_docs)} documents from MongoDB based on Pinecone IDs")
+        logger.info("RAG_node - retrieved {len(mongo_docs)} documents from MongoDB based on Pinecone IDs", number_of_documents=len(mongo_docs))
         # 5. Format the documents into the TypedDict expected by LangGraph
         for doc in mongo_docs:
             r_id = doc.get("rule_id", "")
@@ -66,7 +73,7 @@ async def rag_node(state: ComplianceState, config: RunnableConfig) -> dict[str, 
 
         # Ensure the final list is sorted by relevance score descending 
         retrieved_rules.sort(key=lambda x: x["relevance_score"], reverse=True)
-    logger.info(f"RAG_node - formatted {len(retrieved_rules)} retrieved rules for state update")
+    logger.info("RAG_node - formatted retrieved rules for state update", number_of_rules=len(retrieved_rules))
     # 6. Return the state update dictionary.
     return {
         "retrieved_rules": retrieved_rules,
