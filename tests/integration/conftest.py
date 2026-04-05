@@ -22,6 +22,7 @@ Design principles
   setdefault does not replace them with dummy values.
 """
 
+import asyncio
 import os
 
 import pytest
@@ -71,6 +72,30 @@ def pytest_collection_modifyitems(items: list, config: object) -> None:  # noqa:
 
 
 # ---------------------------------------------------------------------------
+# Session-scoped event loop — all session-scoped async fixtures (Motor client,
+# httpx inside GoogleGenerativeAIEmbeddings, etc.) must share a single event
+# loop that outlives any individual test function.  Without this, Motor and
+# httpx clients created during the first test become orphaned when pytest-asyncio
+# tears down the per-function loop before the next test, causing timeouts and
+# "Event loop is closed" errors.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """
+    Provide a single event loop for the entire integration test session.
+
+    pytest-asyncio defaults to a per-function loop which is incompatible with
+    session-scoped fixtures that hold async I/O resources (Motor, httpx).
+    This fixture overrides that default for the integration suite only.
+    """
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+# ---------------------------------------------------------------------------
 # Real Settings — loaded once from the environment (no lru_cache override).
 # ---------------------------------------------------------------------------
 
@@ -99,14 +124,14 @@ def real_settings():
 
 
 @pytest.fixture(scope="session")
-def mongodb_service(real_settings):  # noqa: ARG001
+async def mongodb_service(real_settings):  # noqa: ARG001
     """
     Provide a live MongoDBService instance, shared across the entire session.
 
-    We intentionally do NOT call await mongodb.connect() — MongoDBService uses
-    Motor which establishes its connection lazily on the first query.  This
-    matches the behaviour in main.py where the service is instantiated in the
-    synchronous part of lifespan before the first await.
+    Declared as async so Motor's AsyncIOMotorClient is bound to the
+    session-scoped event loop provided by the event_loop fixture above.
+    Motor establishes its connection lazily on the first query, matching
+    the behaviour in main.py's lifespan context manager.
     """
     service = MongoDBService()
     yield service
@@ -114,7 +139,7 @@ def mongodb_service(real_settings):  # noqa: ARG001
 
 
 @pytest.fixture(scope="session")
-def pinecone_service(real_settings):  # noqa: ARG001
+async def pinecone_service(real_settings):  # noqa: ARG001
     """Provide a live PineconeService instance, shared across the entire session."""
     service = PineconeService()
     yield service
@@ -123,14 +148,19 @@ def pinecone_service(real_settings):  # noqa: ARG001
 
 
 @pytest.fixture(scope="session")
-def embedding_service(real_settings):  # noqa: ARG001
-    """Provide a live EmbeddingService instance, shared across the entire session."""
+async def embedding_service(real_settings):  # noqa: ARG001
+    """
+    Provide a live EmbeddingService instance, shared across the entire session.
+
+    Declared as async so the internal httpx client inside
+    GoogleGenerativeAIEmbeddings is bound to the session-scoped event loop.
+    """
     service = EmbeddingService()
     yield service
 
 
 @pytest.fixture(scope="session")
-def rag_config(mongodb_service, pinecone_service, embedding_service):
+async def rag_config(mongodb_service, pinecone_service, embedding_service):
     """
     Build the LangGraph RunnableConfig dict expected by rag_node.
 
